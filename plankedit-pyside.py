@@ -1,4 +1,6 @@
 import sys
+import json
+import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QPlainTextEdit, 
                                QWidget, QMenu, QTextEdit)
 from PySide6.QtGui import (QPalette, QColor, QFont, QAction, QPainter, 
@@ -138,19 +140,31 @@ class PlanckEdit(QMainWindow):
         self.setWindowTitle("planckedit")
         self.resize(1280, 720)
 
-        # Use our custom CodeEditor instead of standard QPlainTextEdit
+        # 1. Determine Config Path (Same folder as this script)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.config_path = os.path.join(script_dir, "config.json")
+
+        # 2. Setup Editor
         self.editor = CodeEditor()
         self.setCentralWidget(self.editor)
         
-        self.setup_font(size=14) # Increased font size
+        self.setup_font(size=14)
         
-        # Menu Setup
+        # 3. Load Config (Defaults if file missing)
+        self.config = self.load_config()
+
+        # 4. Setup Menu
         self.context_menu = QMenu(self)
         
-        # Toggle Word Wrap Action
+        # Word Wrap Action
         self.wrap_action = QAction("Toggle Word Wrap", self)
         self.wrap_action.setCheckable(True)
-        self.wrap_action.setChecked(True) # Default to on
+        
+        # Apply the loaded setting to the GUI
+        is_wrapped = self.config.get("word_wrap", True) # Default True
+        self.wrap_action.setChecked(is_wrapped)
+        self.apply_word_wrap(is_wrapped)
+        
         self.wrap_action.triggered.connect(self.toggle_word_wrap)
         self.context_menu.addAction(self.wrap_action)
 
@@ -160,11 +174,50 @@ class PlanckEdit(QMainWindow):
         close_action.triggered.connect(self.close)
         self.context_menu.addAction(close_action)
 
-    def toggle_word_wrap(self):
-        if self.wrap_action.isChecked():
+    def load_config(self):
+        """
+        Loads settings from config.json. Returns default dict if file 
+        doesn't exist or is corrupt.
+        """
+        default_config = {"word_wrap": True}
+        
+        if not os.path.exists(self.config_path):
+            return default_config
+
+        try:
+            with open(self.config_path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            print("Error loading config, using defaults.")
+            return default_config
+
+    def save_config(self):
+        """Writes the current self.config dictionary to config.json"""
+        try:
+            with open(self.config_path, "w") as f:
+                json.dump(self.config, f, indent=4)
+        except IOError as e:
+            print(f"Error saving config: {e}")
+
+    def apply_word_wrap(self, enabled):
+        """Helper to actually apply the setting to the editor widget"""
+        if enabled:
             self.editor.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         else:
             self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
+
+    def toggle_word_wrap(self):
+        # 1. Get new state
+        is_checked = self.wrap_action.isChecked()
+        
+        # 2. Apply it
+        self.apply_word_wrap(is_checked)
+        
+        # 3. Update Config Object
+        self.config["word_wrap"] = is_checked
+        
+        # 4. Save Immediately
+        self.save_config()
 
     def setup_font(self, size=12):
         font = QFont("Consolas") 
