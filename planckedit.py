@@ -1,3 +1,7 @@
+"""
+Hyper optimized tkinter approach to plankedit
+"""
+
 import tkinter as tk
 import ctypes
 from tkinter import filedialog, messagebox
