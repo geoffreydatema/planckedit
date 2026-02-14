@@ -97,6 +97,19 @@ class CodeEditor(QPlainTextEdit):
             bottom = top + self.blockBoundingRect(block).height()
             block_number += 1
 
+    def keyPressEvent(self, event):
+        """
+        Overrides the default key press to convert Tab to 4 spaces.
+        """
+        # Check if the key is Tab and no modifiers (like Ctrl or Alt) are pressed
+        if event.key() == Qt.Key_Tab and event.modifiers() == Qt.NoModifier:
+            self.insertPlainText("    ")
+            # We return early to prevent the default behavior (inserting \t)
+            return 
+        
+        # For all other keys, use the default behavior
+        super().keyPressEvent(event)
+
     def highlight_current_line(self):
         """Highlights the line where the cursor currently is."""
         extra_selections = []
@@ -163,6 +176,11 @@ class PlanckEdit(QMainWindow):
         font.setStyleHint(QFont.Monospace)
         font.setPointSize(size)
         self.editor.setFont(font)
+
+        # NEW: Set the visual tab stop distance to 4 spaces
+        # This ensures existing tabs in files look correct
+        metrics = self.editor.fontMetrics()
+        self.editor.setTabStopDistance(4 * metrics.horizontalAdvance(' '))
 
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_QuoteLeft:
