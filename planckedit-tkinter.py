@@ -6,7 +6,9 @@ from tkinter import ttk, filedialog, messagebox, simpledialog, font
 
 class CodeEditor(tk.Frame):
     def __init__(self, master=None, on_change=None):
+        # Set background to dark grey to avoid white corners
         super().__init__(master, bg="#2d2d2d")
+        
         self.on_change_callback = on_change
         self.tab_size = 4
         self.use_spaces = True
@@ -14,9 +16,9 @@ class CodeEditor(tk.Frame):
         self.font_family = "Consolas"
 
         # Grid configuration
-        self.grid_rowconfigure(0, weight=1) # Row 0: Editor area (expands)
-        self.grid_rowconfigure(1, weight=0) # Row 1: Horizontal Scrollbar (fixed height)
-        self.grid_columnconfigure(1, weight=1) # Column 1: Main text (expands)
+        self.grid_rowconfigure(0, weight=1) 
+        self.grid_rowconfigure(1, weight=0) 
+        self.grid_columnconfigure(1, weight=1) 
 
         # 1. Line Number Area
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
@@ -34,7 +36,7 @@ class CodeEditor(tk.Frame):
         self.v_scrollbar.grid(row=0, column=2, sticky="ns")
         self.text_area.config(yscrollcommand=self.update_v_scroll)
 
-        # 4. Horizontal Scrollbar (Initially visible if wrap is off)
+        # 4. Horizontal Scrollbar
         self.h_scrollbar = ttk.Scrollbar(self, orient="horizontal", command=self.text_area.xview)
         self.h_scrollbar.grid(row=1, column=1, sticky="ew")
         self.text_area.config(xscrollcommand=self.h_scrollbar.set)
@@ -45,6 +47,9 @@ class CodeEditor(tk.Frame):
         self.text_area.bind("<Shift-Tab>", self.handle_backtab)
         self.text_area.bind("<Shift-Return>", self.handle_shift_enter)
         
+        # IMPORTANT: Recalculate line numbers when window resizes (wrapping changes)
+        self.text_area.bind("<Configure>", self.on_content_changed)
+
         self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
 
@@ -74,13 +79,16 @@ class CodeEditor(tk.Frame):
         self.update_tab_stops()
 
     def set_word_wrap(self, enable):
-        """Called by the main window to toggle wrap mode and scrollbar visibility."""
+        """Called by the main window to toggle wrap mode."""
         if enable:
             self.text_area.configure(wrap="word")
-            self.h_scrollbar.grid_remove() # Hide scrollbar
+            self.h_scrollbar.grid_remove() 
         else:
             self.text_area.configure(wrap="none")
-            self.h_scrollbar.grid() # Show scrollbar
+            self.h_scrollbar.grid()
+        
+        # Force a redraw because wrapping changes the line heights immediately
+        self.redraw_line_numbers()
 
     # --- Scrolling & Line Numbers ---
 
@@ -93,33 +101,53 @@ class CodeEditor(tk.Frame):
         self.line_numbers.yview_moveto(first)
 
     def sync_wheel(self, event):
-        # Windows MouseWheel Event
-        # event.delta is usually 120 (up) or -120 (down)
-        # .yview_scroll expects positive for down, negative for up
-        
-        # We divide by 120 to get the number of 'units' (lines) to scroll
         units = int(-1 * (event.delta / 120))
-        
         self.text_area.yview_scroll(units, "units")
         self.line_numbers.yview_scroll(units, "units")
-        
-        return "break" # Don't let the default scroll happen, we handled it
+        return "break" 
 
     def on_content_changed(self, event=None):
         self.redraw_line_numbers()
         if self.on_change_callback:
             self.on_change_callback()
 
-    def redraw_line_numbers(self):
-        content = self.text_area.get("1.0", "end-1c")
-        lines = content.count("\n") + 1
-        line_str = "\n".join(str(i) for i in range(1, lines + 1))
-        
+    def redraw_line_numbers(self, event=None):
         self.line_numbers.config(state='normal')
         self.line_numbers.delete("1.0", "end")
-        self.line_numbers.insert("1.0", line_str)
+        
+        # Get total logical lines (end-1c prevents counting the final phantom newline)
+        last_index = self.text_area.index("end-1c")
+        total_lines = int(last_index.split('.')[0])
+        
+        # MODE 1: Wrap is OFF (Fast)
+        # One logical line always equals one visual line.
+        if self.text_area.cget("wrap") == "none":
+            line_str = "\n".join(str(i) for i in range(1, total_lines + 1))
+            self.line_numbers.insert("1.0", line_str)
+            
+        # MODE 2: Wrap is ON (Slower, accurate)
+        # We must calculate the visual height of every line.
+        else:
+            line_content = []
+            for i in range(1, total_lines + 1):
+                # Calculate visual height of this specific line
+                # "displaylines" tells us how many rows it occupies on screen
+                count = self.text_area.count(f"{i}.0", f"{i+1}.0", "displaylines")
+                
+                # count returns a tuple e.g. (2,) or None if empty
+                val = count[0] if count else 1
+                
+                # If a line wraps to 3 rows, we need the number, followed by 2 newlines
+                # "N" + "\n" * (val - 1) creates the spacing + 1 final "\n" for the next number
+                # Effectively: "N" + "\n"*val
+                line_content.append(str(i) + ("\n" * val))
+            
+            # Join them all
+            self.line_numbers.insert("1.0", "".join(line_content))
+
         self.line_numbers.config(state='disabled')
         
+        # Re-sync scroll position in case redraw shifted things
         first, _ = self.text_area.yview()
         self.line_numbers.yview_moveto(first)
 

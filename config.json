@@ -1,5 +1,5 @@
 {
-    "word_wrap": false,
+    "word_wrap": true,
     "tab_size": 4,
     "use_spaces": true
 }
