@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QPlainTextEdit,
                                QWidget, QMenu, QTextEdit, QInputDialog, 
                                QFileDialog, QMessageBox) # <--- Added QMessageBox
 from PySide6.QtGui import (QPalette, QColor, QFont, QAction, QPainter, 
-                           QTextFormat, QCloseEvent) # <--- Added QCloseEvent
+                           QTextFormat, QCloseEvent, QKeySequence)
 from PySide6.QtCore import Qt, QRect, QSize
 
 # --- 1. The Line Number Sidebar Widget ---
@@ -213,21 +213,25 @@ class PlanckEdit(QMainWindow):
         new_action.setShortcut("Ctrl+N")
         new_action.triggered.connect(self.new_file)
         self.context_menu.addAction(new_action)
+        self.addAction(new_action)
 
         open_action = QAction("Open...", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_file)
         self.context_menu.addAction(open_action)
+        self.addAction(open_action)
 
         save_action = QAction("Save", self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_file)
         self.context_menu.addAction(save_action)
+        self.addAction(save_action)
 
         save_as_action = QAction("Save As...", self)
         save_as_action.setShortcut("Ctrl+Shift+S")
         save_as_action.triggered.connect(self.save_file_as)
         self.context_menu.addAction(save_as_action)
+        self.addAction(save_as_action)
 
         self.context_menu.addSeparator()
 
@@ -255,8 +259,10 @@ class PlanckEdit(QMainWindow):
         self.context_menu.addSeparator()
 
         close_action = QAction("Close", self)
-        close_action.triggered.connect(self.close)
+        close_action.setShortcut(QKeySequence("Ctrl+W")) # Standard shortcut
+        close_action.triggered.connect(self.close)       # Calls the window's .close() method
         self.context_menu.addAction(close_action)
+        self.addAction(close_action)
 
     def new_file(self):
         # 1. Check for unsaved changes first
@@ -272,7 +278,7 @@ class PlanckEdit(QMainWindow):
         
         # 4. Update the UI
         self.update_title()
-        
+
     def open_file(self):
         # NEW: Check for unsaved changes before opening a new file
         if not self.maybe_save():
