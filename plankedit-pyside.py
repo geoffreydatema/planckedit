@@ -113,18 +113,48 @@ class CodeEditor(QPlainTextEdit):
         self.setTabStopDistance(self.tab_size * metrics.horizontalAdvance(' '))
 
     def keyPressEvent(self, event):
-        """
-        Overrides the default key press to handle custom indentation.
-        """
+        # 1. Handle Tab (Indent)
         if event.key() == Qt.Key_Tab and event.modifiers() == Qt.NoModifier:
             if self.use_spaces:
-                # Insert N spaces
                 self.insertPlainText(" " * self.tab_size)
             else:
-                # Insert a literal tab character
                 self.insertPlainText("\t")
             return 
-        
+
+        # 2. Handle Shift + Tab (Unindent / Smart Backspace)
+        if event.key() == Qt.Key_Backtab:
+            cursor = self.textCursor()
+            position_in_block = cursor.positionInBlock()
+            block_text = cursor.block().text()
+
+            if self.use_spaces:
+                # SPACES MODE: Check for spaces before cursor
+                # Slice the text up to the cursor position
+                text_before_cursor = block_text[:position_in_block]
+                
+                # Count consecutive spaces backwards (up to tab_size)
+                space_count = 0
+                for char in reversed(text_before_cursor):
+                    if char == ' ':
+                        space_count += 1
+                        if space_count == self.tab_size:
+                            break
+                    else:
+                        break
+                
+                # Delete the counted spaces
+                if space_count > 0:
+                    for _ in range(space_count):
+                        cursor.deletePreviousChar()
+
+            else:
+                # TAB MODE: Check if previous char is a tab
+                if position_in_block > 0 and block_text[position_in_block - 1] == '\t':
+                    cursor.deletePreviousChar()
+            
+            return
+
+        # 3. Default Handler
         super().keyPressEvent(event)
 
     def highlight_current_line(self):
