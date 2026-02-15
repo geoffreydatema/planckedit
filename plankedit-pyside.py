@@ -249,6 +249,13 @@ class PlanckEdit(QMainWindow):
         self.context_menu.addAction(open_stash_action)
         self.addAction(open_stash_action)
 
+        clear_stash_action = QAction("Clear Stash", self)
+        # Note: On some OSs/keyboards 'Backspace' might need to be 'BackSpace'
+        clear_stash_action.setShortcut(QKeySequence("Ctrl+Alt+Backspace")) 
+        clear_stash_action.triggered.connect(self.clear_stash)
+        self.context_menu.addAction(clear_stash_action)
+        self.addAction(clear_stash_action)
+
         self.context_menu.addSeparator()
 
         # 1. Word Wrap Action
@@ -419,11 +426,15 @@ class PlanckEdit(QMainWindow):
     def open_stash(self):
         """
         Opens 'stash.txt' into the editor.
-        Sets current_file to None so 'Save' triggers 'Save As'.
+        - If current doc is Untitled (scratchpad), this acts as a 'Revert'.
+        - If current doc is a Real File, it asks to save first.
         """
-        # 1. Check for unsaved changes in current doc
-        if not self.maybe_save():
-            return
+        # 1. LOGIC CHANGE: Only check for safety if we are in a REAL file.
+        #    If we are Untitled, we assume the user wants to reload/revert the stash,
+        #    so we skip maybe_save() to avoid overwriting the disk version.
+        if self.current_file is not None:
+            if not self.maybe_save():
+                return
 
         stash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stash.txt")
 
@@ -437,12 +448,13 @@ class PlanckEdit(QMainWindow):
             
             self.editor.setPlainText(text)
             
-            # CRITICAL: We do NOT set self.current_file to stash_path.
-            # We set it to None. This ensures "Ctrl+S" triggers "Save As".
+            # Reset context to "Stash Mode"
             self.current_file = None 
             self.editor.document().setModified(False)
             self.update_title()
             
+            print(f"Stash reloaded from {stash_path}")
+
         except Exception as e:
             print(f"Error opening stash: {e}")
 
@@ -476,6 +488,26 @@ class PlanckEdit(QMainWindow):
                 print("Stash file cleared (content saved to new file).")
             except Exception as e:
                 print(f"Error clearing stash: {e}")
+
+    def clear_stash(self):
+        """
+        Instantly wipes the stash file and resets the editor.
+        No warnings - this is a 'destructive' fast action for temp data.
+        """
+        # 1. Delete the physical stash file
+        stash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stash.txt")
+        if os.path.exists(stash_path):
+            try:
+                os.remove(stash_path)
+                print("Stash file deleted.")
+            except Exception as e:
+                print(f"Error deleting stash file: {e}")
+
+        # 2. Reset the editor state
+        self.editor.clear()
+        self.current_file = None 
+        self.editor.document().setModified(False)
+        self.update_title()
     
     def update_title(self):
         """Updates the window title with filename and asterisk."""
