@@ -1,3 +1,11 @@
+"""
+Near identical tkinter port of the PySide planckedit.
+
+backlog:
+- cause the new line numbers to appear on keypress not keyrelease
+- double check if there's an issue with wordwrap making the editor think we have made changes to the file when we actually didnt
+"""
+
 import os
 import json
 import tkinter as tk
