@@ -334,14 +334,25 @@ class PlanckEdit(QMainWindow):
         if not self.editor.document().isModified():
             return True
 
-        # Determine the correct prompt message
         filename = os.path.basename(self.current_file) if self.current_file else "Untitled"
-        msg = f"The document '{filename}' has been modified.\nDo you want to save your changes?"
+        text = f"The document '{filename}' has been modified.\nDo you want to save your changes?"
 
-        # Show the dialog
-        ret = QMessageBox.warning(self, "Unsaved Changes",
-                                  msg,
-                                  QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        # --- CHANGE IS HERE ---
+        # We create a QMessageBox instance instead of using the static .warning() method.
+        # This prevents the Windows system sound and ensures the box uses our Dark Theme.
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Unsaved Changes")
+        msg_box.setText(text)
+        
+        # We use NoIcon to keep it silent and clean
+        msg_box.setIcon(QMessageBox.NoIcon) 
+        
+        msg_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        msg_box.setDefaultButton(QMessageBox.Save)
+        
+        # Execute the dialog and capture the result
+        ret = msg_box.exec()
+        # ----------------------
 
         if ret == QMessageBox.Save:
             return self.save_file()
