@@ -93,7 +93,17 @@ class CodeEditor(tk.Frame):
         self.line_numbers.yview_moveto(first)
 
     def sync_wheel(self, event):
-        return "break" 
+        # Windows MouseWheel Event
+        # event.delta is usually 120 (up) or -120 (down)
+        # .yview_scroll expects positive for down, negative for up
+        
+        # We divide by 120 to get the number of 'units' (lines) to scroll
+        units = int(-1 * (event.delta / 120))
+        
+        self.text_area.yview_scroll(units, "units")
+        self.line_numbers.yview_scroll(units, "units")
+        
+        return "break" # Don't let the default scroll happen, we handled it
 
     def on_content_changed(self, event=None):
         self.redraw_line_numbers()
