@@ -6,7 +6,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog, font
 
 class CodeEditor(tk.Frame):
     def __init__(self, master=None, on_change=None):
-        super().__init__(master)
+        super().__init__(master, bg="#2d2d2d")
         self.on_change_callback = on_change
         self.tab_size = 4
         self.use_spaces = True
