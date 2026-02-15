@@ -2,7 +2,7 @@ import sys
 import json
 import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QPlainTextEdit, 
-                               QWidget, QMenu, QTextEdit)
+                               QWidget, QMenu, QTextEdit, QInputDialog)
 from PySide6.QtGui import (QPalette, QColor, QFont, QAction, QPainter, 
                            QTextFormat)
 from PySide6.QtCore import Qt, QRect, QSize
@@ -25,6 +25,10 @@ class CodeEditor(QPlainTextEdit):
     def __init__(self):
         super().__init__()
         
+        # Default settings (will be overwritten by config on load)
+        self.tab_size = 4
+        self.use_spaces = True
+
         self.line_number_area = LineNumberArea(self)
 
         self.blockCountChanged.connect(self.update_line_number_area_width)
@@ -99,17 +103,28 @@ class CodeEditor(QPlainTextEdit):
             bottom = top + self.blockBoundingRect(block).height()
             block_number += 1
 
+    def set_tab_settings(self, size, use_spaces):
+        """Updates the internal tab settings and the visual tab width."""
+        self.tab_size = size
+        self.use_spaces = use_spaces
+        
+        # Update how existing \t characters are rendered
+        metrics = self.fontMetrics()
+        self.setTabStopDistance(self.tab_size * metrics.horizontalAdvance(' '))
+
     def keyPressEvent(self, event):
         """
-        Overrides the default key press to convert Tab to 4 spaces.
+        Overrides the default key press to handle custom indentation.
         """
-        # Check if the key is Tab and no modifiers (like Ctrl or Alt) are pressed
         if event.key() == Qt.Key_Tab and event.modifiers() == Qt.NoModifier:
-            self.insertPlainText("    ")
-            # We return early to prevent the default behavior (inserting \t)
+            if self.use_spaces:
+                # Insert N spaces
+                self.insertPlainText(" " * self.tab_size)
+            else:
+                # Insert a literal tab character
+                self.insertPlainText("\t")
             return 
         
-        # For all other keys, use the default behavior
         super().keyPressEvent(event)
 
     def highlight_current_line(self):
@@ -140,33 +155,44 @@ class PlanckEdit(QMainWindow):
         self.setWindowTitle("planckedit")
         self.resize(1280, 720)
 
-        # 1. Determine Config Path (Same folder as this script)
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.config_path = os.path.join(script_dir, "config.json")
 
-        # 2. Setup Editor
         self.editor = CodeEditor()
         self.setCentralWidget(self.editor)
         
-        self.setup_font(size=14)
-        
-        # 3. Load Config (Defaults if file missing)
+        # Load Config (with new defaults)
         self.config = self.load_config()
+        
+        # Setup Font (Must happen before applying tab settings)
+        self.setup_font(size=14)
 
-        # 4. Setup Menu
+        # Apply settings to the Editor
+        self.apply_settings()
+
+        # --- Menu Setup ---
         self.context_menu = QMenu(self)
         
-        # Word Wrap Action
+        # 1. Word Wrap Action
         self.wrap_action = QAction("Toggle Word Wrap", self)
         self.wrap_action.setCheckable(True)
-        
-        # Apply the loaded setting to the GUI
-        is_wrapped = self.config.get("word_wrap", True) # Default True
-        self.wrap_action.setChecked(is_wrapped)
-        self.apply_word_wrap(is_wrapped)
-        
+        self.wrap_action.setChecked(self.config["word_wrap"])
         self.wrap_action.triggered.connect(self.toggle_word_wrap)
         self.context_menu.addAction(self.wrap_action)
+
+        self.context_menu.addSeparator()
+
+        # 2. Indent with Spaces Action (Toggle)
+        self.space_action = QAction("Indent with Spaces", self)
+        self.space_action.setCheckable(True)
+        self.space_action.setChecked(self.config["use_spaces"])
+        self.space_action.triggered.connect(self.toggle_tabs_vs_spaces)
+        self.context_menu.addAction(self.space_action)
+
+        # 3. Set Tab Size Action
+        self.tab_size_action = QAction(f"Set Tab Size ({self.config['tab_size']})", self)
+        self.tab_size_action.triggered.connect(self.change_tab_size)
+        self.context_menu.addAction(self.tab_size_action)
 
         self.context_menu.addSeparator()
 
@@ -175,29 +201,42 @@ class PlanckEdit(QMainWindow):
         self.context_menu.addAction(close_action)
 
     def load_config(self):
-        """
-        Loads settings from config.json. Returns default dict if file 
-        doesn't exist or is corrupt.
-        """
-        default_config = {"word_wrap": True}
+        # New defaults included
+        default_config = {
+            "word_wrap": True,
+            "tab_size": 4,
+            "use_spaces": True
+        }
         
         if not os.path.exists(self.config_path):
             return default_config
 
         try:
             with open(self.config_path, "r") as f:
-                return json.load(f)
+                # Merge loaded config with defaults (in case new keys were added)
+                loaded = json.load(f)
+                default_config.update(loaded)
+                return default_config
         except (json.JSONDecodeError, IOError):
-            print("Error loading config, using defaults.")
             return default_config
 
     def save_config(self):
-        """Writes the current self.config dictionary to config.json"""
         try:
             with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=4)
         except IOError as e:
             print(f"Error saving config: {e}")
+
+    def apply_settings(self):
+        """Applies all current config values to the editor."""
+        # Word Wrap
+        if self.config["word_wrap"]:
+            self.editor.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        else:
+            self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
+            
+        # Tab Settings
+        self.editor.set_tab_settings(self.config["tab_size"], self.config["use_spaces"])
 
     def apply_word_wrap(self, enabled):
         """Helper to actually apply the setting to the editor widget"""
@@ -207,17 +246,35 @@ class PlanckEdit(QMainWindow):
             self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
 
     def toggle_word_wrap(self):
-        # 1. Get new state
-        is_checked = self.wrap_action.isChecked()
-        
-        # 2. Apply it
-        self.apply_word_wrap(is_checked)
-        
-        # 3. Update Config Object
-        self.config["word_wrap"] = is_checked
-        
-        # 4. Save Immediately
+        self.config["word_wrap"] = self.wrap_action.isChecked()
         self.save_config()
+        self.apply_settings()
+
+    def toggle_tabs_vs_spaces(self):
+        self.config["use_spaces"] = self.space_action.isChecked()
+        self.save_config()
+        self.apply_settings()
+
+    def change_tab_size(self):
+        # QInputDialog.getInt(parent, title, label, value, min, max, step)
+        num, ok = QInputDialog.getInt(
+            self, 
+            "Tab Size", 
+            "Enter tab width:", 
+            self.config["tab_size"], 
+            1, 
+            16, 
+            1
+        )
+        if ok:
+            self.config["tab_size"] = num
+            # Update menu text to reflect new size
+            self.tab_size_action.setText(f"Set Tab Size ({num})")
+            
+            # Update editor
+            self.editor.set_tab_settings(self.config["tab_size"], self.config["use_spaces"])
+            
+            self.save_config()
 
     def setup_font(self, size=12):
         font = QFont("Consolas") 
