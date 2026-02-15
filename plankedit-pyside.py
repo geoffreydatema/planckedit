@@ -2,9 +2,10 @@ import sys
 import json
 import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QPlainTextEdit, 
-                               QWidget, QMenu, QTextEdit, QInputDialog, QFileDialog)
+                               QWidget, QMenu, QTextEdit, QInputDialog, 
+                               QFileDialog, QMessageBox) # <--- Added QMessageBox
 from PySide6.QtGui import (QPalette, QColor, QFont, QAction, QPainter, 
-                           QTextFormat)
+                           QTextFormat, QCloseEvent) # <--- Added QCloseEvent
 from PySide6.QtCore import Qt, QRect, QSize
 
 # --- 1. The Line Number Sidebar Widget ---
@@ -185,11 +186,15 @@ class PlanckEdit(QMainWindow):
         self.setWindowTitle("planckedit")
         self.resize(1280, 720)
 
+        self.current_file = None
+
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.config_path = os.path.join(script_dir, "config.json")
 
         self.editor = CodeEditor()
         self.setCentralWidget(self.editor)
+
+        self.editor.modificationChanged.connect(lambda _: self.update_title())
         
         # Load Config (with new defaults)
         self.config = self.load_config()
@@ -204,6 +209,11 @@ class PlanckEdit(QMainWindow):
         self.context_menu = QMenu(self)
         
         # FILE OPERATIONS
+        new_action = QAction("New", self)
+        new_action.setShortcut("Ctrl+N")
+        new_action.triggered.connect(self.new_file)
+        self.context_menu.addAction(new_action)
+
         open_action = QAction("Open...", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_file)
@@ -248,7 +258,26 @@ class PlanckEdit(QMainWindow):
         close_action.triggered.connect(self.close)
         self.context_menu.addAction(close_action)
 
+    def new_file(self):
+        # 1. Check for unsaved changes first
+        if not self.maybe_save():
+            return # User cancelled
+
+        # 2. Reset the editor state
+        self.editor.clear()
+        self.current_file = None 
+        
+        # 3. Reset the "dirty" flag so it doesn't think the blank file is modified
+        self.editor.document().setModified(False)
+        
+        # 4. Update the UI
+        self.update_title()
+        
     def open_file(self):
+        # NEW: Check for unsaved changes before opening a new file
+        if not self.maybe_save():
+            return
+
         path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "All Files (*)")
         
         if path:
@@ -258,37 +287,85 @@ class PlanckEdit(QMainWindow):
                 
                 self.editor.setPlainText(text)
                 self.current_file = path
+                self.editor.document().setModified(False) # Reset modified flag
                 self.update_title()
             except Exception as e:
                 print(f"Error opening file: {e}")
 
     def save_file(self):
-        # If no file is associated (new document), redirect to "Save As"
+        """Returns True if saved successfully, False if cancelled or failed."""
         if self.current_file is None:
-            self.save_file_as()
-        else:
-            try:
-                with open(self.current_file, 'w', encoding='utf-8') as f:
-                    f.write(self.editor.toPlainText())
-                print(f"Saved to {self.current_file}")
-            except Exception as e:
-                print(f"Error saving file: {e}")
+            return self.save_file_as()
+        
+        try:
+            with open(self.current_file, 'w', encoding='utf-8') as f:
+                f.write(self.editor.toPlainText())
+            
+            self.editor.document().setModified(False) # Reset modified flag
+            self.update_title()
+            print(f"Saved to {self.current_file}")
+            return True
+        except Exception as e:
+            print(f"Error saving file: {e}")
+            return False
 
     def save_file_as(self):
+        """Returns True if saved successfully, False if cancelled."""
         path, _ = QFileDialog.getSaveFileName(self, "Save File As", "", "All Files (*)")
         
         if path:
             self.current_file = path
-            self.save_file() # Re-use the save logic
-            self.update_title()
+            return self.save_file()
+        
+        return False # User pressed Cancel in the dialog
+    
+    def maybe_save(self):
+        """
+        Checks if there are unsaved changes.
+        Returns True if it's safe to proceed (changes saved or discarded).
+        Returns False if the operation should be cancelled.
+        """
+        if not self.editor.document().isModified():
+            return True
+
+        # Determine the correct prompt message
+        filename = os.path.basename(self.current_file) if self.current_file else "Untitled"
+        msg = f"The document '{filename}' has been modified.\nDo you want to save your changes?"
+
+        # Show the dialog
+        ret = QMessageBox.warning(self, "Unsaved Changes",
+                                  msg,
+                                  QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+
+        if ret == QMessageBox.Save:
+            return self.save_file()
+        elif ret == QMessageBox.Cancel:
+            return False
+        
+        return True # User chose Discard
 
     def update_title(self):
+        """Updates the window title with filename and asterisk."""
+        title = "planckedit"
+        
         if self.current_file:
-            # Only show the filename, not the full path
             filename = os.path.basename(self.current_file)
-            self.setWindowTitle(f"planckedit - {filename}")
+            title = f"planckedit - {filename}"
         else:
-            self.setWindowTitle("planckedit")
+            title = "planckedit - Untitled"
+            
+        # Add asterisk if modified
+        if self.editor.document().isModified():
+            title += "*"
+            
+        self.setWindowTitle(title)
+
+    def closeEvent(self, event: QCloseEvent):
+        """Intercepts the application close event."""
+        if self.maybe_save():
+            event.accept()
+        else:
+            event.ignore()
 
     def load_config(self):
         # New defaults included
