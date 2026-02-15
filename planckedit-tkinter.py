@@ -13,10 +13,11 @@ class CodeEditor(tk.Frame):
         self.font_family = "Consolas"
 
         # Grid configuration
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1) # Column 1 is the main text
+        self.grid_rowconfigure(0, weight=1) # Row 0: Editor area (expands)
+        self.grid_rowconfigure(1, weight=0) # Row 1: Horizontal Scrollbar (fixed height)
+        self.grid_columnconfigure(1, weight=1) # Column 1: Main text (expands)
 
-        # 1. Line Number Area (Text widget, disabled)
+        # 1. Line Number Area
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
                                     background="#2d2d2d", foreground="#969696", state='disabled')
         self.line_numbers.grid(row=0, column=0, sticky="ns")
@@ -24,13 +25,18 @@ class CodeEditor(tk.Frame):
         # 2. Main Editor Area
         self.text_area = tk.Text(self, wrap="none", undo=True, border=0,
                                  background="#1e1e1e", foreground="#e6e6e6",
-                                 insertbackground="white") # white cursor
+                                 insertbackground="white")
         self.text_area.grid(row=0, column=1, sticky="nsew")
 
-        # 3. Scrollbar
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.sync_scroll)
-        self.scrollbar.grid(row=0, column=2, sticky="ns")
-        self.text_area.config(yscrollcommand=self.update_scroll)
+        # 3. Vertical Scrollbar
+        self.v_scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.sync_scroll)
+        self.v_scrollbar.grid(row=0, column=2, sticky="ns")
+        self.text_area.config(yscrollcommand=self.update_v_scroll)
+
+        # 4. Horizontal Scrollbar (Initially visible if wrap is off)
+        self.h_scrollbar = ttk.Scrollbar(self, orient="horizontal", command=self.text_area.xview)
+        self.h_scrollbar.grid(row=1, column=1, sticky="ew")
+        self.text_area.config(xscrollcommand=self.h_scrollbar.set)
 
         # 5. Events
         self.text_area.bind("<KeyRelease>", self.on_content_changed)
@@ -38,7 +44,6 @@ class CodeEditor(tk.Frame):
         self.text_area.bind("<Shift-Tab>", self.handle_backtab)
         self.text_area.bind("<Shift-Return>", self.handle_shift_enter)
         
-        # Mouse wheel sync
         self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
 
@@ -46,7 +51,6 @@ class CodeEditor(tk.Frame):
         self.redraw_line_numbers()
 
     def setup_font(self):
-        # Try to find a good monospace font
         available = font.families()
         if "Consolas" in available: self.font_family = "Consolas"
         elif "Menlo" in available: self.font_family = "Menlo"
@@ -56,12 +60,9 @@ class CodeEditor(tk.Frame):
         self.custom_font = font.Font(family=self.font_family, size=self.font_size)
         self.text_area.configure(font=self.custom_font)
         self.line_numbers.configure(font=self.custom_font)
-        
-        # Update tab stops based on font width
         self.update_tab_stops()
 
     def update_tab_stops(self):
-        # Calculate pixel width of a space to set correct tab stops
         space_width = self.custom_font.measure(" ")
         tab_width_pixels = self.tab_size * space_width
         self.text_area.configure(tabs=(tab_width_pixels,))
@@ -71,23 +72,27 @@ class CodeEditor(tk.Frame):
         self.use_spaces = use_spaces
         self.update_tab_stops()
 
+    def set_word_wrap(self, enable):
+        """Called by the main window to toggle wrap mode and scrollbar visibility."""
+        if enable:
+            self.text_area.configure(wrap="word")
+            self.h_scrollbar.grid_remove() # Hide scrollbar
+        else:
+            self.text_area.configure(wrap="none")
+            self.h_scrollbar.grid() # Show scrollbar
+
     # --- Scrolling & Line Numbers ---
 
     def sync_scroll(self, *args):
-        # Triggered by scrollbar dragging
         self.text_area.yview(*args)
         self.line_numbers.yview(*args)
 
-    def update_scroll(self, first, last):
-        # Triggered by text area scrolling (updating the scrollbar)
-        self.scrollbar.set(first, last)
+    def update_v_scroll(self, first, last):
+        self.v_scrollbar.set(first, last)
         self.line_numbers.yview_moveto(first)
 
     def sync_wheel(self, event):
-        # Triggered by mouse wheel, ensures both scroll together
-        # Windows: event.delta, Linux: event.num
-        return "break" # Handled natively by binding yview in most cases, 
-                       # but if needed we would use self.text_area.yview_scroll(...)
+        return "break" 
 
     def on_content_changed(self, event=None):
         self.redraw_line_numbers()
@@ -95,11 +100,8 @@ class CodeEditor(tk.Frame):
             self.on_change_callback()
 
     def redraw_line_numbers(self):
-        # Get number of lines
         content = self.text_area.get("1.0", "end-1c")
         lines = content.count("\n") + 1
-        
-        # Generate string "1\n2\n3..."
         line_str = "\n".join(str(i) for i in range(1, lines + 1))
         
         self.line_numbers.config(state='normal')
@@ -107,7 +109,6 @@ class CodeEditor(tk.Frame):
         self.line_numbers.insert("1.0", line_str)
         self.line_numbers.config(state='disabled')
         
-        # Resync view position
         first, _ = self.text_area.yview()
         self.line_numbers.yview_moveto(first)
 
@@ -116,65 +117,51 @@ class CodeEditor(tk.Frame):
     def handle_tab(self, event):
         if self.use_spaces:
             self.text_area.insert("insert", " " * self.tab_size)
-            return "break" # Prevent default tab behavior (moving focus)
-        return None # Let default happen (insert \t)
+            return "break" 
+        return None 
 
     def handle_backtab(self, event):
-        # Shift+Tab: Unindent
         if self.use_spaces:
-            # Check previous chars
             cursor_idx = self.text_area.index("insert")
             line, col = map(int, cursor_idx.split('.'))
-            
             if col == 0: return "break"
 
-            # Get text before cursor on current line
             line_text = self.text_area.get(f"{line}.0", f"{line}.{col}")
-            
             spaces_to_delete = 0
             for char in reversed(line_text):
                 if char == ' ':
                     spaces_to_delete += 1
-                    if spaces_to_delete == self.tab_size:
-                        break
-                else:
-                    break
+                    if spaces_to_delete == self.tab_size: break
+                else: break
             
             if spaces_to_delete > 0:
                 self.text_area.delete(f"insert-{spaces_to_delete}c", "insert")
         else:
-            # Check for \t
             if self.text_area.get("insert-1c") == "\t":
                 self.text_area.delete("insert-1c")
-        
         return "break"
 
     def handle_shift_enter(self, event):
-        # Force a real newline
         self.text_area.insert("insert", "\n")
         self.on_content_changed()
         return "break"
 
-    # --- API for Main Window ---
-    def get_text(self):
-        return self.text_area.get("1.0", "end-1c")
-
+    # --- API ---
+    def get_text(self): return self.text_area.get("1.0", "end-1c")
+    
     def set_text(self, text):
         self.text_area.delete("1.0", "end")
         self.text_area.insert("1.0", text)
         self.redraw_line_numbers()
-        self.text_area.edit_reset() # Clear undo stack
+        self.text_area.edit_reset()
 
     def clear(self):
         self.text_area.delete("1.0", "end")
         self.redraw_line_numbers()
         self.text_area.edit_reset()
 
-    def is_modified(self):
-        return self.text_area.edit_modified()
-
-    def set_modified(self, value):
-        self.text_area.edit_modified(value)
+    def is_modified(self): return self.text_area.edit_modified()
+    def set_modified(self, value): self.text_area.edit_modified(value)
 
 class PlanckEdit(tk.Tk):
     def __init__(self):
@@ -425,8 +412,10 @@ class PlanckEdit(tk.Tk):
             print(f"Config save error: {e}")
 
     def apply_settings(self):
-        wrap_mode = "word" if self.config["word_wrap"] else "none"
-        self.editor.text_area.configure(wrap=wrap_mode)
+        # Update Word Wrap and Scrollbar visibility
+        self.editor.set_word_wrap(self.config["word_wrap"])
+        
+        # Update Tabs
         self.editor.set_tab_settings(self.config["tab_size"], self.config["use_spaces"])
 
     def toggle_word_wrap(self):
