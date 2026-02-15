@@ -1,3 +1,14 @@
+"""
+This implemenation is super clean. GUI looks great, no weird hacks needed to get it to work. Benchmarks at < 26MB RAM footprint with no file loaded.
+
+Try:
+- QTabWidget solution (likely takes an unecessary amount of RAM)
+- swapping documents in a single editor for huge RAM usage reduction
+
+Intuition:
+- tkinter implementation is likely significantly smaller in ram than this one, but I'm wondering if the document swapping idea is a reasonable tradeoff to get the clean modern implementaion of using PySide but keeping the RAM footprint reasonable
+"""
+
 import sys
 import json
 import os
