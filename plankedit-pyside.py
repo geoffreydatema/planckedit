@@ -2,7 +2,7 @@ import sys
 import json
 import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QPlainTextEdit, 
-                               QWidget, QMenu, QTextEdit, QInputDialog)
+                               QWidget, QMenu, QTextEdit, QInputDialog, QFileDialog)
 from PySide6.QtGui import (QPalette, QColor, QFont, QAction, QPainter, 
                            QTextFormat)
 from PySide6.QtCore import Qt, QRect, QSize
@@ -203,6 +203,24 @@ class PlanckEdit(QMainWindow):
         # --- Menu Setup ---
         self.context_menu = QMenu(self)
         
+        # FILE OPERATIONS
+        open_action = QAction("Open...", self)
+        open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self.open_file)
+        self.context_menu.addAction(open_action)
+
+        save_action = QAction("Save", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.save_file)
+        self.context_menu.addAction(save_action)
+
+        save_as_action = QAction("Save As...", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self.save_file_as)
+        self.context_menu.addAction(save_as_action)
+
+        self.context_menu.addSeparator()
+
         # 1. Word Wrap Action
         self.wrap_action = QAction("Toggle Word Wrap", self)
         self.wrap_action.setCheckable(True)
@@ -229,6 +247,48 @@ class PlanckEdit(QMainWindow):
         close_action = QAction("Close", self)
         close_action.triggered.connect(self.close)
         self.context_menu.addAction(close_action)
+
+    def open_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "All Files (*)")
+        
+        if path:
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                
+                self.editor.setPlainText(text)
+                self.current_file = path
+                self.update_title()
+            except Exception as e:
+                print(f"Error opening file: {e}")
+
+    def save_file(self):
+        # If no file is associated (new document), redirect to "Save As"
+        if self.current_file is None:
+            self.save_file_as()
+        else:
+            try:
+                with open(self.current_file, 'w', encoding='utf-8') as f:
+                    f.write(self.editor.toPlainText())
+                print(f"Saved to {self.current_file}")
+            except Exception as e:
+                print(f"Error saving file: {e}")
+
+    def save_file_as(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Save File As", "", "All Files (*)")
+        
+        if path:
+            self.current_file = path
+            self.save_file() # Re-use the save logic
+            self.update_title()
+
+    def update_title(self):
+        if self.current_file:
+            # Only show the filename, not the full path
+            filename = os.path.basename(self.current_file)
+            self.setWindowTitle(f"planckedit - {filename}")
+        else:
+            self.setWindowTitle("planckedit")
 
     def load_config(self):
         # New defaults included
