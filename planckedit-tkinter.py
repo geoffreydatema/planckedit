@@ -1,6 +1,7 @@
 import os
 import json
 import tkinter as tk
+import ctypes
 from tkinter import ttk, filedialog, messagebox, simpledialog, font
 
 class CodeEditor(tk.Frame):
@@ -169,7 +170,9 @@ class PlanckEdit(tk.Tk):
         self.title("planckedit")
         self.geometry("1280x720")
         self.configure(bg="#2d2d2d")
-        
+
+        self.setup_dark_theme()
+
         self.current_file = None
         self.is_dirty = False # Track modification state manually for visual logic
 
@@ -210,6 +213,59 @@ class PlanckEdit(tk.Tk):
         # Startup
         self.update_title()
         self.load_startup_stash()
+
+    def setup_dark_theme(self):
+        # 1. Dark Title Bar (Windows 10/11 Hack)
+        # We ask the Windows DWM (Desktop Window Manager) to use the "Immersive Dark Mode" attribute.
+        try:
+            self.update() # Force creation of the window handle (HWND)
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+            get_parent = ctypes.windll.user32.GetParent
+            hwnd = get_parent(self.winfo_id())
+            rendering_policy = DWMWA_USE_IMMERSIVE_DARK_MODE
+            value = ctypes.c_int(2)
+            set_window_attribute(hwnd, rendering_policy, ctypes.byref(value), ctypes.sizeof(value))
+        except Exception:
+            pass # Fail silently on non-Windows OS
+
+        # 2. Dark Scrollbars (TTK Styling)
+        # We switch to the 'clam' theme engine which supports custom coloring.
+        style = ttk.Style()
+        style.theme_use('clam') 
+
+        # Define colors
+        bg_color = "#2d2d2d"
+        trough_color = "#1e1e1e"
+        active_color = "#3e3e3e" # Lighter grey when hovering
+        arrow_color = "#969696"
+
+        style.configure("Vertical.TScrollbar",
+            gripcount=0,
+            background=bg_color,
+            darkcolor=bg_color,
+            lightcolor=bg_color,
+            troughcolor=trough_color,
+            bordercolor=bg_color,
+            arrowcolor=arrow_color)
+
+        style.configure("Horizontal.TScrollbar",
+            gripcount=0,
+            background=bg_color,
+            darkcolor=bg_color,
+            lightcolor=bg_color,
+            troughcolor=trough_color,
+            bordercolor=bg_color,
+            arrowcolor=arrow_color)
+
+        # Map active states (when you hover or click)
+        style.map("Vertical.TScrollbar",
+            background=[('active', active_color), ('disabled', bg_color)],
+            arrowcolor=[('active', 'white'), ('disabled', arrow_color)])
+        
+        style.map("Horizontal.TScrollbar",
+            background=[('active', active_color), ('disabled', bg_color)],
+            arrowcolor=[('active', 'white'), ('disabled', arrow_color)])
 
     def on_text_modified(self):
         # Callback from editor when text changes
