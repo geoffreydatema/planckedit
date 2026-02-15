@@ -235,6 +235,22 @@ class PlanckEdit(QMainWindow):
 
         self.context_menu.addSeparator()
 
+        # STASH (Ctrl + Alt + S)
+        stash_action = QAction("Stash", self)
+        stash_action.setShortcut(QKeySequence("Ctrl+Alt+S"))
+        stash_action.triggered.connect(self.stash_file)
+        self.context_menu.addAction(stash_action)
+        self.addAction(stash_action)
+
+        # OPEN STASH (Ctrl + Alt + O)
+        open_stash_action = QAction("Open Stash", self)
+        open_stash_action.setShortcut(QKeySequence("Ctrl+Alt+O"))
+        open_stash_action.triggered.connect(self.open_stash)
+        self.context_menu.addAction(open_stash_action)
+        self.addAction(open_stash_action)
+
+        self.context_menu.addSeparator()
+
         # 1. Word Wrap Action
         self.wrap_action = QAction("Toggle Word Wrap", self)
         self.wrap_action.setCheckable(True)
@@ -263,6 +279,8 @@ class PlanckEdit(QMainWindow):
         close_action.triggered.connect(self.close)       # Calls the window's .close() method
         self.context_menu.addAction(close_action)
         self.addAction(close_action)
+
+        self.load_startup_stash()
 
     def new_file(self):
         # 1. Check for unsaved changes first
@@ -316,43 +334,56 @@ class PlanckEdit(QMainWindow):
             return False
 
     def save_file_as(self):
-        """Returns True if saved successfully, False if cancelled."""
+        """
+        Prompts for a filename and saves the content.
+        If we were working on an Untitled file (stash) and successfully saved,
+        it clears the stash file to prevent 'zombie' notes reappearing.
+        """
+        # 1. Capture state BEFORE the save: Are we currently editing the stash/untitled?
+        was_stash_mode = (self.current_file is None)
+
         path, _ = QFileDialog.getSaveFileName(self, "Save File As", "", "All Files (*)")
         
         if path:
             self.current_file = path
-            return self.save_file()
+            
+            # 2. Attempt the save
+            if self.save_file():
+                # 3. If successful AND we came from stash mode, wipe the old stash file
+                if was_stash_mode:
+                    self.clear_stash_file()
+                return True
         
-        return False # User pressed Cancel in the dialog
+        return False # User pressed Cancel
     
     def maybe_save(self):
         """
         Checks if there are unsaved changes.
-        Returns True if it's safe to proceed (changes saved or discarded).
-        Returns False if the operation should be cancelled.
+        - If Untitled & Modified: Silently Stash and proceed.
+        - If File Open & Modified: Ask user to Save/Discard/Cancel.
         """
         if not self.editor.document().isModified():
             return True
 
-        filename = os.path.basename(self.current_file) if self.current_file else "Untitled"
+        # CASE 1: Untitled Document (Scratchpad mode)
+        # "Just stash it and don't bother me."
+        if self.current_file is None:
+            self.stash_file()
+            return True 
+
+        # CASE 2: Existing File (Strict mode)
+        # "I am editing a real file, please ask me before you lose my work."
+        filename = os.path.basename(self.current_file)
         text = f"The document '{filename}' has been modified.\nDo you want to save your changes?"
 
-        # --- CHANGE IS HERE ---
-        # We create a QMessageBox instance instead of using the static .warning() method.
-        # This prevents the Windows system sound and ensures the box uses our Dark Theme.
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Unsaved Changes")
         msg_box.setText(text)
-        
-        # We use NoIcon to keep it silent and clean
         msg_box.setIcon(QMessageBox.NoIcon) 
-        
         msg_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
         msg_box.setDefaultButton(QMessageBox.Save)
         
-        # Execute the dialog and capture the result
         ret = msg_box.exec()
-        # ----------------------
 
         if ret == QMessageBox.Save:
             return self.save_file()
@@ -361,6 +392,91 @@ class PlanckEdit(QMainWindow):
         
         return True # User chose Discard
 
+    def stash_file(self):
+        """
+        Saves the current editor content to 'stash.txt' in the script directory.
+        Does NOT change the current filename context.
+        """
+        stash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stash.txt")
+        
+        try:
+            with open(stash_path, 'w', encoding='utf-8') as f:
+                f.write(self.editor.toPlainText())
+            
+            # Flash a message on the status bar or just print for now
+            # (Since we don't have a status bar, we can use a temporary title change or just console)
+            print(f"Stashed to {stash_path}")
+            
+            # Optional: Visual feedback (flash the window title briefly)
+            original_title = self.windowTitle()
+            self.setWindowTitle("planckedit - Stashed!")
+            # Restore title after 1 second (requires QTimer, but let's keep it simple for now)
+            # You could also just use a QMessageBox.information if you want explicit confirmation
+            
+        except Exception as e:
+            print(f"Error stashing file: {e}")
+
+    def open_stash(self):
+        """
+        Opens 'stash.txt' into the editor.
+        Sets current_file to None so 'Save' triggers 'Save As'.
+        """
+        # 1. Check for unsaved changes in current doc
+        if not self.maybe_save():
+            return
+
+        stash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stash.txt")
+
+        if not os.path.exists(stash_path):
+            QMessageBox.information(self, "Stash Empty", "No stash file found.")
+            return
+
+        try:
+            with open(stash_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            
+            self.editor.setPlainText(text)
+            
+            # CRITICAL: We do NOT set self.current_file to stash_path.
+            # We set it to None. This ensures "Ctrl+S" triggers "Save As".
+            self.current_file = None 
+            self.editor.document().setModified(False)
+            self.update_title()
+            
+        except Exception as e:
+            print(f"Error opening stash: {e}")
+
+    def load_startup_stash(self):
+        """
+        Checks for stash.txt at startup and loads it if found.
+        """
+        stash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stash.txt")
+        
+        if os.path.exists(stash_path):
+            try:
+                with open(stash_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                
+                self.editor.setPlainText(text)
+                self.current_file = None # Ensure it stays in "Scratchpad" mode
+                self.editor.document().setModified(False) # Reset dirty flag
+                self.update_title()
+            except Exception as e:
+                print(f"Error loading stash on startup: {e}")
+
+    def clear_stash_file(self):
+        """
+        Removes the stash file from disk. 
+        Used when the stash content has been successfully promoted to a real file.
+        """
+        stash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stash.txt")
+        if os.path.exists(stash_path):
+            try:
+                os.remove(stash_path)
+                print("Stash file cleared (content saved to new file).")
+            except Exception as e:
+                print(f"Error clearing stash: {e}")
+    
     def update_title(self):
         """Updates the window title with filename and asterisk."""
         title = "planckedit"
