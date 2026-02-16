@@ -23,12 +23,10 @@ class CodeEditor(QPlainTextEdit):
     def __init__(self):
         super().__init__()
         
-        # --- CONFIGURATION ---
         self.tab_size = 4
         self.use_spaces = True
         self.font_size = 14
         self.font_family = "Courier New"
-        # ---------------------
 
         self.line_number_area = LineNumberArea(self)
 
@@ -40,14 +38,12 @@ class CodeEditor(QPlainTextEdit):
         self.update_line_number_area_width(0)
 
     def setup_font(self):
-        # Clean, consolidated font setup using the universal standard
         font = QFont(self.font_family)
         font.setStyleHint(QFont.Monospace)
         font.setPointSize(self.font_size)
         self.setFont(font)
         self.line_number_area.setFont(font)
         
-        # Update tab stops based on the new font metrics
         metrics = self.fontMetrics()
         self.setTabStopDistance(self.tab_size * metrics.horizontalAdvance(' '))
 
