@@ -18,13 +18,10 @@ class CodeEditor(tk.Frame):
         
         self.on_change_callback = on_change
         
-        # --- CONFIGURATION ---
         self.tab_size = 4
         self.use_spaces = True
         self.font_size = 14         
-        self.line_num_size = 14     
         self.font_family = "Consolas"
-        # ---------------------
 
         # Grid configuration
         self.grid_rowconfigure(0, weight=1) 
@@ -33,17 +30,19 @@ class CodeEditor(tk.Frame):
 
         # 1. Line Number Area
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
-                                    background="#2d2d2d", foreground="#969696", state='disabled')
+                                    background="#2d2d2d", foreground="#969696", state='disabled',
+                                    highlightthickness=0,
+                                    spacing1=0, spacing2=0, spacing3=0) 
         self.line_numbers.grid(row=0, column=0, sticky="ns")
         
-        # --- NEW: Configure Right Alignment Tag ---
         self.line_numbers.tag_configure("justify_right", justify="right")
-        # ------------------------------------------
 
         # 2. Main Editor Area
         self.text_area = tk.Text(self, wrap="none", undo=True, border=0,
                                  background="#1e1e1e", foreground="#e6e6e6",
-                                 insertbackground="white")
+                                 insertbackground="white",
+                                 highlightthickness=0,
+                                 spacing1=0, spacing2=0, spacing3=0)
         self.text_area.grid(row=0, column=1, sticky="nsew")
 
         # 3. Vertical Scrollbar
@@ -77,16 +76,17 @@ class CodeEditor(tk.Frame):
         elif "Monospace" in available: self.font_family = "Monospace"
         else: self.font_family = "Courier New"
 
-        self.editor_font = font.Font(family=self.font_family, size=self.font_size)
-        self.line_font = font.Font(family=self.font_family, size=self.line_num_size)
+        # FIX: Use a SINGLE font object for both widgets to guarantee 
+        # identical vertical metrics (line height).
+        self.shared_font = font.Font(family=self.font_family, size=self.font_size)
 
-        self.text_area.configure(font=self.editor_font)
-        self.line_numbers.configure(font=self.line_font)
+        self.text_area.configure(font=self.shared_font)
+        self.line_numbers.configure(font=self.shared_font)
         
         self.update_tab_stops()
 
     def update_tab_stops(self):
-        space_width = self.editor_font.measure(" ")
+        space_width = self.shared_font.measure(" ")
         tab_width_pixels = self.tab_size * space_width
         self.text_area.configure(tabs=(tab_width_pixels,))
 
@@ -103,8 +103,6 @@ class CodeEditor(tk.Frame):
             self.text_area.configure(wrap="none")
             self.h_scrollbar.grid()
         self.redraw_line_numbers()
-
-    # --- Scrolling & Line Numbers ---
 
     def sync_scroll(self, *args):
         self.text_area.yview(*args)
@@ -133,22 +131,31 @@ class CodeEditor(tk.Frame):
         self.line_numbers.config(state='normal')
         self.line_numbers.delete("1.0", "end")
         
-        last_index = self.text_area.index("end-1c")
-        total_lines = int(last_index.split('.')[0])
+        # Calculate real lines
+        total_lines = int(self.text_area.index('end').split('.')[0]) - 1
         
-        output_str = ""
-
-        if self.text_area.cget("wrap") == "none":
-            output_str = "\n".join(str(i) for i in range(1, total_lines + 1))
+        line_content = []
+        for i in range(1, total_lines + 1):
             
-        else:
-            line_content = []
-            for i in range(1, total_lines + 1):
+            # Check for wrapping
+            if self.text_area.cget("wrap") == "word":
                 count = self.text_area.count(f"{i}.0", f"{i+1}.0", "displaylines")
                 val = count[0] if count else 1
-                line_content.append(str(i) + ("\n" * val))
+            else:
+                val = 1 # No wrap = always 1 line height
+
+            # FIX: Logic Change
+            # If val is 1, we want "1". 
+            # If val is 2, we want "1\n". (The number + 1 blank line below it)
+            # We do NOT add a trailing newline here, because .join() will do that.
             
-            output_str = "".join(line_content)
+            extra_newlines = val - 1
+            line_content.append(str(i) + ("\n" * extra_newlines))
+        
+        # Join with newlines. 
+        # ["1", "2"] becomes "1\n2".
+        # ["1\n", "2"] becomes "1\n\n2".
+        output_str = "\n".join(line_content)
 
         self.line_numbers.insert("1.0", output_str, "justify_right")
 
