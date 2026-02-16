@@ -56,18 +56,23 @@ class CodeEditor(tk.Frame):
         self.text_area.config(xscrollcommand=self.h_scrollbar.set)
 
         # 5. Events
-        # Content changes (for line numbers) can still happen on release (performance)
+        
+        # General typing (performance optimization: update on release)
         self.text_area.bind("<KeyRelease>", self.on_content_changed)
         
+        # Structural Keys: Enter, Backspace, Delete need INSTANT redraw
+        self.text_area.bind("<Return>", self.on_structural_key) 
+        self.text_area.bind("<BackSpace>", self.on_structural_key)
+        self.text_area.bind("<Delete>", self.on_structural_key)
+
         # Navigation/Highlighting (Needs to be snappy)
-        # We bind to Any KeyPress and Mouse Click, but use after(1)
         self.text_area.bind("<KeyPress>", self.on_cursor_activity)
         self.text_area.bind("<Button-1>", self.on_cursor_activity)
 
         self.text_area.bind("<Tab>", self.handle_tab)
         self.text_area.bind("<Shift-Tab>", self.handle_backtab)
         self.text_area.bind("<Shift-Return>", self.handle_shift_enter)
-        self.text_area.bind("<Return>", self.on_return_key) 
+        
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
         self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
         
@@ -124,7 +129,11 @@ class CodeEditor(tk.Frame):
         self.line_numbers.yview_scroll(units, "units")
         return "break" 
 
-    def on_return_key(self, event):
+    def on_structural_key(self, event):
+        """
+        Triggered on keys that change line count (Enter, BS, Del).
+        Waits 1ms for Tkinter to modify text, then redraws line numbers immediately.
+        """
         self.after(1, self.on_content_changed)
         return None
 
