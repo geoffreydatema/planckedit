@@ -56,7 +56,7 @@ class CodeEditor(tk.Frame):
         self.text_area.bind("<Shift-Return>", self.handle_shift_enter)
         
         # IMPORTANT: Recalculate line numbers when window resizes (wrapping changes)
-        self.text_area.bind("<Configure>", self.on_content_changed)
+        self.text_area.bind("<Return>", self.on_return_key)
 
         self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
@@ -64,6 +64,16 @@ class CodeEditor(tk.Frame):
         self.setup_font()
         self.redraw_line_numbers()
 
+    def on_return_key(self, event):
+        """
+        Triggered immediately when the user presses Enter.
+        We use 'after(1)' to schedule the redraw 1ms later.
+        This gives Tkinter time to insert the newline character first,
+        so our line count is accurate when the redraw happens.
+        """
+        self.after(1, self.on_content_changed)
+        return None # Allow the default Enter behavior (newline insertion) to proceed
+    
     def setup_font(self):
         available = font.families()
         if "Consolas" in available: self.font_family = "Consolas"
