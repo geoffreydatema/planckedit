@@ -14,14 +14,17 @@ from tkinter import ttk, filedialog, messagebox, simpledialog, font
 
 class CodeEditor(tk.Frame):
     def __init__(self, master=None, on_change=None):
-        # Set background to dark grey to avoid white corners
         super().__init__(master, bg="#2d2d2d")
         
         self.on_change_callback = on_change
+        
+        # --- CONFIGURATION ---
         self.tab_size = 4
         self.use_spaces = True
-        self.font_size = 14
+        self.font_size = 14         
+        self.line_num_size = 14     
         self.font_family = "Consolas"
+        # ---------------------
 
         # Grid configuration
         self.grid_rowconfigure(0, weight=1) 
@@ -32,6 +35,10 @@ class CodeEditor(tk.Frame):
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
                                     background="#2d2d2d", foreground="#969696", state='disabled')
         self.line_numbers.grid(row=0, column=0, sticky="ns")
+        
+        # --- NEW: Configure Right Alignment Tag ---
+        self.line_numbers.tag_configure("justify_right", justify="right")
+        # ------------------------------------------
 
         # 2. Main Editor Area
         self.text_area = tk.Text(self, wrap="none", undo=True, border=0,
@@ -54,9 +61,8 @@ class CodeEditor(tk.Frame):
         self.text_area.bind("<Tab>", self.handle_tab)
         self.text_area.bind("<Shift-Tab>", self.handle_backtab)
         self.text_area.bind("<Shift-Return>", self.handle_shift_enter)
-        
-        # IMPORTANT: Recalculate line numbers when window resizes (wrapping changes)
-        self.text_area.bind("<Return>", self.on_return_key)
+        self.text_area.bind("<Configure>", self.on_content_changed) 
+        self.text_area.bind("<Return>", self.on_return_key) 
 
         self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
@@ -64,16 +70,6 @@ class CodeEditor(tk.Frame):
         self.setup_font()
         self.redraw_line_numbers()
 
-    def on_return_key(self, event):
-        """
-        Triggered immediately when the user presses Enter.
-        We use 'after(1)' to schedule the redraw 1ms later.
-        This gives Tkinter time to insert the newline character first,
-        so our line count is accurate when the redraw happens.
-        """
-        self.after(1, self.on_content_changed)
-        return None # Allow the default Enter behavior (newline insertion) to proceed
-    
     def setup_font(self):
         available = font.families()
         if "Consolas" in available: self.font_family = "Consolas"
@@ -81,13 +77,16 @@ class CodeEditor(tk.Frame):
         elif "Monospace" in available: self.font_family = "Monospace"
         else: self.font_family = "Courier New"
 
-        self.custom_font = font.Font(family=self.font_family, size=self.font_size)
-        self.text_area.configure(font=self.custom_font)
-        self.line_numbers.configure(font=self.custom_font)
+        self.editor_font = font.Font(family=self.font_family, size=self.font_size)
+        self.line_font = font.Font(family=self.font_family, size=self.line_num_size)
+
+        self.text_area.configure(font=self.editor_font)
+        self.line_numbers.configure(font=self.line_font)
+        
         self.update_tab_stops()
 
     def update_tab_stops(self):
-        space_width = self.custom_font.measure(" ")
+        space_width = self.editor_font.measure(" ")
         tab_width_pixels = self.tab_size * space_width
         self.text_area.configure(tabs=(tab_width_pixels,))
 
@@ -97,15 +96,12 @@ class CodeEditor(tk.Frame):
         self.update_tab_stops()
 
     def set_word_wrap(self, enable):
-        """Called by the main window to toggle wrap mode."""
         if enable:
             self.text_area.configure(wrap="word")
             self.h_scrollbar.grid_remove() 
         else:
             self.text_area.configure(wrap="none")
             self.h_scrollbar.grid()
-        
-        # Force a redraw because wrapping changes the line heights immediately
         self.redraw_line_numbers()
 
     # --- Scrolling & Line Numbers ---
@@ -124,6 +120,10 @@ class CodeEditor(tk.Frame):
         self.line_numbers.yview_scroll(units, "units")
         return "break" 
 
+    def on_return_key(self, event):
+        self.after(1, self.on_content_changed)
+        return None
+
     def on_content_changed(self, event=None):
         self.redraw_line_numbers()
         if self.on_change_callback:
@@ -133,39 +133,26 @@ class CodeEditor(tk.Frame):
         self.line_numbers.config(state='normal')
         self.line_numbers.delete("1.0", "end")
         
-        # Get total logical lines (end-1c prevents counting the final phantom newline)
         last_index = self.text_area.index("end-1c")
         total_lines = int(last_index.split('.')[0])
         
-        # MODE 1: Wrap is OFF (Fast)
-        # One logical line always equals one visual line.
+        output_str = ""
+
         if self.text_area.cget("wrap") == "none":
-            line_str = "\n".join(str(i) for i in range(1, total_lines + 1))
-            self.line_numbers.insert("1.0", line_str)
+            output_str = "\n".join(str(i) for i in range(1, total_lines + 1))
             
-        # MODE 2: Wrap is ON (Slower, accurate)
-        # We must calculate the visual height of every line.
         else:
             line_content = []
             for i in range(1, total_lines + 1):
-                # Calculate visual height of this specific line
-                # "displaylines" tells us how many rows it occupies on screen
                 count = self.text_area.count(f"{i}.0", f"{i+1}.0", "displaylines")
-                
-                # count returns a tuple e.g. (2,) or None if empty
                 val = count[0] if count else 1
-                
-                # If a line wraps to 3 rows, we need the number, followed by 2 newlines
-                # "N" + "\n" * (val - 1) creates the spacing + 1 final "\n" for the next number
-                # Effectively: "N" + "\n"*val
                 line_content.append(str(i) + ("\n" * val))
             
-            # Join them all
-            self.line_numbers.insert("1.0", "".join(line_content))
+            output_str = "".join(line_content)
+
+        self.line_numbers.insert("1.0", output_str, "justify_right")
 
         self.line_numbers.config(state='disabled')
-        
-        # Re-sync scroll position in case redraw shifted things
         first, _ = self.text_area.yview()
         self.line_numbers.yview_moveto(first)
 
