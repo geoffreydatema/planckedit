@@ -1,9 +1,5 @@
 """
 Near identical tkinter port of the PySide planckedit.
-
-backlog:
-- cause the new line numbers to appear on keypress not keyrelease
-- double check if there's an issue with wordwrap making the editor think we have made changes to the file when we actually didnt
 """
 
 import os
@@ -60,11 +56,13 @@ class CodeEditor(tk.Frame):
         self.text_area.bind("<Tab>", self.handle_tab)
         self.text_area.bind("<Shift-Tab>", self.handle_backtab)
         self.text_area.bind("<Shift-Return>", self.handle_shift_enter)
-        self.text_area.bind("<Configure>", self.on_content_changed) 
         self.text_area.bind("<Return>", self.on_return_key) 
-
-        self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
+        self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
+        
+        # FIX 1: Bind Configure directly to redraw, skipping the modification check
+        # Resizing affects line wrapping (visual), not text content (data).
+        self.text_area.bind("<Configure>", self.redraw_line_numbers) 
 
         self.setup_font()
         self.redraw_line_numbers()
@@ -76,8 +74,6 @@ class CodeEditor(tk.Frame):
         elif "Monospace" in available: self.font_family = "Monospace"
         else: self.font_family = "Courier New"
 
-        # FIX: Use a SINGLE font object for both widgets to guarantee 
-        # identical vertical metrics (line height).
         self.shared_font = font.Font(family=self.font_family, size=self.font_size)
 
         self.text_area.configure(font=self.shared_font)
@@ -131,30 +127,19 @@ class CodeEditor(tk.Frame):
         self.line_numbers.config(state='normal')
         self.line_numbers.delete("1.0", "end")
         
-        # Calculate real lines
         total_lines = int(self.text_area.index('end').split('.')[0]) - 1
         
         line_content = []
         for i in range(1, total_lines + 1):
-            
-            # Check for wrapping
             if self.text_area.cget("wrap") == "word":
                 count = self.text_area.count(f"{i}.0", f"{i+1}.0", "displaylines")
                 val = count[0] if count else 1
             else:
-                val = 1 # No wrap = always 1 line height
-
-            # FIX: Logic Change
-            # If val is 1, we want "1". 
-            # If val is 2, we want "1\n". (The number + 1 blank line below it)
-            # We do NOT add a trailing newline here, because .join() will do that.
+                val = 1 
             
             extra_newlines = val - 1
             line_content.append(str(i) + ("\n" * extra_newlines))
         
-        # Join with newlines. 
-        # ["1", "2"] becomes "1\n2".
-        # ["1\n", "2"] becomes "1\n\n2".
         output_str = "\n".join(line_content)
 
         self.line_numbers.insert("1.0", output_str, "justify_right")
@@ -204,12 +189,17 @@ class CodeEditor(tk.Frame):
         self.text_area.delete("1.0", "end")
         self.text_area.insert("1.0", text)
         self.redraw_line_numbers()
+        
+        # FIX 2: Reset modification flag explicitly. 
+        # 'edit_reset' clears the undo stack, but 'edit_modified(False)' clears the dirty flag.
         self.text_area.edit_reset()
+        self.text_area.edit_modified(False)
 
     def clear(self):
         self.text_area.delete("1.0", "end")
         self.redraw_line_numbers()
         self.text_area.edit_reset()
+        self.text_area.edit_modified(False)
 
     def is_modified(self): return self.text_area.edit_modified()
     def set_modified(self, value): self.text_area.edit_modified(value)
