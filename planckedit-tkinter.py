@@ -19,10 +19,12 @@ class CodeEditor(tk.Frame):
         self.font_size = 14         
         self.font_family = "Consolas"
 
+        # Grid configuration
         self.grid_rowconfigure(0, weight=1) 
         self.grid_rowconfigure(1, weight=0) 
         self.grid_columnconfigure(1, weight=1) 
 
+        # 1. Line Number Area
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
                                     background="#2d2d2d", foreground="#969696", state='disabled',
                                     highlightthickness=0,
@@ -31,6 +33,7 @@ class CodeEditor(tk.Frame):
         
         self.line_numbers.tag_configure("justify_right", justify="right")
 
+        # 2. Main Editor Area
         self.text_area = tk.Text(self, wrap="none", undo=True, border=0,
                                  background="#1e1e1e", foreground="#e6e6e6",
                                  insertbackground="white",
@@ -38,25 +41,41 @@ class CodeEditor(tk.Frame):
                                  spacing1=0, spacing2=0, spacing3=0)
         self.text_area.grid(row=0, column=1, sticky="nsew")
 
+        # --- Current Line Highlighting ---
+        self.text_area.tag_configure("current_line", background="#2a2a2a")
+        self.text_area.tag_raise("sel")
+
+        # 3. Vertical Scrollbar
         self.v_scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.sync_scroll)
         self.v_scrollbar.grid(row=0, column=2, sticky="ns")
         self.text_area.config(yscrollcommand=self.update_v_scroll)
 
+        # 4. Horizontal Scrollbar
         self.h_scrollbar = ttk.Scrollbar(self, orient="horizontal", command=self.text_area.xview)
         self.h_scrollbar.grid(row=1, column=1, sticky="ew")
         self.text_area.config(xscrollcommand=self.h_scrollbar.set)
 
+        # 5. Events
+        # Content changes (for line numbers) can still happen on release (performance)
         self.text_area.bind("<KeyRelease>", self.on_content_changed)
+        
+        # Navigation/Highlighting (Needs to be snappy)
+        # We bind to Any KeyPress and Mouse Click, but use after(1)
+        self.text_area.bind("<KeyPress>", self.on_cursor_activity)
+        self.text_area.bind("<Button-1>", self.on_cursor_activity)
+
         self.text_area.bind("<Tab>", self.handle_tab)
         self.text_area.bind("<Shift-Tab>", self.handle_backtab)
         self.text_area.bind("<Shift-Return>", self.handle_shift_enter)
         self.text_area.bind("<Return>", self.on_return_key) 
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
         self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
+        
         self.text_area.bind("<Configure>", self.redraw_line_numbers) 
 
         self.setup_font()
         self.redraw_line_numbers()
+        self.highlight_current_line()
 
     def setup_font(self):
         available = font.families()
@@ -66,6 +85,7 @@ class CodeEditor(tk.Frame):
         else: self.font_family = "Courier New"
 
         self.shared_font = font.Font(family=self.font_family, size=self.font_size)
+
         self.text_area.configure(font=self.shared_font)
         self.line_numbers.configure(font=self.shared_font)
         
@@ -108,10 +128,23 @@ class CodeEditor(tk.Frame):
         self.after(1, self.on_content_changed)
         return None
 
+    def on_cursor_activity(self, event):
+        """
+        Triggered on KeyPress or MouseClick.
+        Waits 1ms for Tkinter to update the cursor position, 
+        then updates the highlight.
+        """
+        self.after(1, self.highlight_current_line)
+
     def on_content_changed(self, event=None):
         self.redraw_line_numbers()
+        self.highlight_current_line()
         if self.on_change_callback:
             self.on_change_callback()
+
+    def highlight_current_line(self, event=None):
+        self.text_area.tag_remove("current_line", "1.0", "end")
+        self.text_area.tag_add("current_line", "insert linestart", "insert lineend+1c")
 
     def redraw_line_numbers(self, event=None):
         self.line_numbers.config(state='normal')
@@ -137,6 +170,8 @@ class CodeEditor(tk.Frame):
         self.line_numbers.config(state='disabled')
         first, _ = self.text_area.yview()
         self.line_numbers.yview_moveto(first)
+
+    # --- Key Handling ---
 
     def handle_tab(self, event):
         if self.use_spaces:
@@ -170,8 +205,8 @@ class CodeEditor(tk.Frame):
         self.on_content_changed()
         return "break"
 
-    def get_text(self):
-        return self.text_area.get("1.0", "end-1c")
+    # --- API ---
+    def get_text(self): return self.text_area.get("1.0", "end-1c")
     
     def set_text(self, text):
         self.text_area.delete("1.0", "end")
@@ -179,12 +214,14 @@ class CodeEditor(tk.Frame):
         self.redraw_line_numbers()
         self.text_area.edit_reset()
         self.text_area.edit_modified(False)
+        self.highlight_current_line()
 
     def clear(self):
         self.text_area.delete("1.0", "end")
         self.redraw_line_numbers()
         self.text_area.edit_reset()
         self.text_area.edit_modified(False)
+        self.highlight_current_line()
 
     def is_modified(self): return self.text_area.edit_modified()
     def set_modified(self, value): self.text_area.edit_modified(value)
