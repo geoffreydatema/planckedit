@@ -27,7 +27,8 @@ class CodeEditor(tk.Frame):
         self.grid_columnconfigure(1, weight=1) 
 
         # 1. Line Number Area
-        self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
+        # Initial width is 3 (minimum). It will grow dynamically.
+        self.line_numbers = tk.Text(self, width=3, padx=4, takefocus=0, border=0,
                                     background="#2d2d2d", foreground="#969696", state='disabled',
                                     highlightthickness=0,
                                     spacing1=0, spacing2=0, spacing3=0) 
@@ -146,7 +147,13 @@ class CodeEditor(tk.Frame):
         self.line_numbers.delete("1.0", "end")
         
         total_lines = int(self.text_area.index('end').split('.')[0]) - 1
+        digits = len(str(total_lines))
+        new_width = digits
         
+        current_width = int(self.line_numbers.cget("width"))
+        if current_width != new_width:
+            self.line_numbers.config(width=new_width)
+
         line_content = []
         for i in range(1, total_lines + 1):
             if self.text_area.cget("wrap") == "word":
