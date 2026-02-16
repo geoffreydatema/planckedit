@@ -1,14 +1,3 @@
-"""
-This implemenation is super clean. GUI looks great, no weird hacks needed to get it to work. Benchmarks at < 26MB RAM footprint with no file loaded.
-
-Try:
-- QTabWidget solution (likely takes an unecessary amount of RAM)
-- swapping documents in a single editor for huge RAM usage reduction
-
-Intuition:
-- tkinter implementation is likely significantly smaller in ram than this one, but I'm wondering if the document swapping idea is a reasonable tradeoff to get the clean modern implementaion of using PySide but keeping the RAM footprint reasonable
-"""
-
 import sys
 import json
 import os
@@ -34,8 +23,12 @@ class CodeEditor(QPlainTextEdit):
     def __init__(self):
         super().__init__()
         
+        # --- CONFIGURATION ---
         self.tab_size = 4
         self.use_spaces = True
+        self.font_size = 14
+        self.font_family = "Courier New"
+        # ---------------------
 
         self.line_number_area = LineNumberArea(self)
 
@@ -43,7 +36,20 @@ class CodeEditor(QPlainTextEdit):
         self.updateRequest.connect(self.update_line_number_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
 
+        self.setup_font()
         self.update_line_number_area_width(0)
+
+    def setup_font(self):
+        # Clean, consolidated font setup using the universal standard
+        font = QFont(self.font_family)
+        font.setStyleHint(QFont.Monospace)
+        font.setPointSize(self.font_size)
+        self.setFont(font)
+        self.line_number_area.setFont(font)
+        
+        # Update tab stops based on the new font metrics
+        metrics = self.fontMetrics()
+        self.setTabStopDistance(self.tab_size * metrics.horizontalAdvance(' '))
 
     def line_number_area_width(self):
         digits = 1
@@ -52,7 +58,8 @@ class CodeEditor(QPlainTextEdit):
             max_num //= 10
             digits += 1
         
-        space = 3 + self.fontMetrics().horizontalAdvance('9') * digits + 10 
+        width = self.fontMetrics().horizontalAdvance('9')
+        space = (width * digits) + width
         return space
 
     def update_line_number_area_width(self, _):
@@ -166,10 +173,8 @@ class PlanckEdit(QMainWindow):
         self.setCentralWidget(self.editor)
         self.editor.modificationChanged.connect(lambda _: self.update_title())
         self.config = self.load_config()
-        self.setup_font(size=14)
         self.apply_settings()
         self.context_menu = QMenu(self)
-        
         new_action = QAction("New", self)
         new_action.setShortcut("Ctrl+N")
         new_action.triggered.connect(self.new_file)
@@ -478,20 +483,6 @@ class PlanckEdit(QMainWindow):
             self.editor.set_tab_settings(self.config["tab_size"], self.config["use_spaces"])
             
             self.save_config()
-
-    def setup_font(self, size=12):
-        font = QFont("Consolas") 
-        if not font.exactMatch():
-            font = QFont("Menlo") 
-        if not font.exactMatch():
-            font = QFont("Monospace")
-            
-        font.setStyleHint(QFont.Monospace)
-        font.setPointSize(size)
-        self.editor.setFont(font)
-
-        metrics = self.editor.fontMetrics()
-        self.editor.setTabStopDistance(4 * metrics.horizontalAdvance(' '))
 
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_QuoteLeft:
