@@ -19,12 +19,10 @@ class CodeEditor(tk.Frame):
         self.font_size = 14         
         self.font_family = "Consolas"
 
-        # Grid configuration
         self.grid_rowconfigure(0, weight=1) 
         self.grid_rowconfigure(1, weight=0) 
         self.grid_columnconfigure(1, weight=1) 
 
-        # 1. Line Number Area
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
                                     background="#2d2d2d", foreground="#969696", state='disabled',
                                     highlightthickness=0,
@@ -33,7 +31,6 @@ class CodeEditor(tk.Frame):
         
         self.line_numbers.tag_configure("justify_right", justify="right")
 
-        # 2. Main Editor Area
         self.text_area = tk.Text(self, wrap="none", undo=True, border=0,
                                  background="#1e1e1e", foreground="#e6e6e6",
                                  insertbackground="white",
@@ -41,31 +38,23 @@ class CodeEditor(tk.Frame):
                                  spacing1=0, spacing2=0, spacing3=0)
         self.text_area.grid(row=0, column=1, sticky="nsew")
 
-        # --- Current Line Highlighting ---
         self.text_area.tag_configure("current_line", background="#2a2a2a")
         self.text_area.tag_raise("sel")
 
-        # 3. Vertical Scrollbar
         self.v_scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.sync_scroll)
         self.v_scrollbar.grid(row=0, column=2, sticky="ns")
         self.text_area.config(yscrollcommand=self.update_v_scroll)
 
-        # 4. Horizontal Scrollbar
         self.h_scrollbar = ttk.Scrollbar(self, orient="horizontal", command=self.text_area.xview)
         self.h_scrollbar.grid(row=1, column=1, sticky="ew")
         self.text_area.config(xscrollcommand=self.h_scrollbar.set)
 
-        # 5. Events
-        
-        # General typing (performance optimization: update on release)
         self.text_area.bind("<KeyRelease>", self.on_content_changed)
         
-        # Structural Keys: Enter, Backspace, Delete need INSTANT redraw
         self.text_area.bind("<Return>", self.on_structural_key) 
         self.text_area.bind("<BackSpace>", self.on_structural_key)
         self.text_area.bind("<Delete>", self.on_structural_key)
 
-        # Navigation/Highlighting (Needs to be snappy)
         self.text_area.bind("<KeyPress>", self.on_cursor_activity)
         self.text_area.bind("<Button-1>", self.on_cursor_activity)
 
@@ -130,19 +119,10 @@ class CodeEditor(tk.Frame):
         return "break" 
 
     def on_structural_key(self, event):
-        """
-        Triggered on keys that change line count (Enter, BS, Del).
-        Waits 1ms for Tkinter to modify text, then redraws line numbers immediately.
-        """
         self.after(1, self.on_content_changed)
         return None
 
     def on_cursor_activity(self, event):
-        """
-        Triggered on KeyPress or MouseClick.
-        Waits 1ms for Tkinter to update the cursor position, 
-        then updates the highlight.
-        """
         self.after(1, self.highlight_current_line)
 
     def on_content_changed(self, event=None):
@@ -180,8 +160,6 @@ class CodeEditor(tk.Frame):
         first, _ = self.text_area.yview()
         self.line_numbers.yview_moveto(first)
 
-    # --- Key Handling ---
-
     def handle_tab(self, event):
         if self.use_spaces:
             self.text_area.insert("insert", " " * self.tab_size)
@@ -214,7 +192,6 @@ class CodeEditor(tk.Frame):
         self.on_content_changed()
         return "break"
 
-    # --- API ---
     def get_text(self): return self.text_area.get("1.0", "end-1c")
     
     def set_text(self, text):
