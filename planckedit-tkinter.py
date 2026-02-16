@@ -19,12 +19,10 @@ class CodeEditor(tk.Frame):
         self.font_size = 14         
         self.font_family = "Consolas"
 
-        # Grid configuration
         self.grid_rowconfigure(0, weight=1) 
         self.grid_rowconfigure(1, weight=0) 
         self.grid_columnconfigure(1, weight=1) 
 
-        # 1. Line Number Area
         self.line_numbers = tk.Text(self, width=4, padx=4, takefocus=0, border=0,
                                     background="#2d2d2d", foreground="#969696", state='disabled',
                                     highlightthickness=0,
@@ -33,7 +31,6 @@ class CodeEditor(tk.Frame):
         
         self.line_numbers.tag_configure("justify_right", justify="right")
 
-        # 2. Main Editor Area
         self.text_area = tk.Text(self, wrap="none", undo=True, border=0,
                                  background="#1e1e1e", foreground="#e6e6e6",
                                  insertbackground="white",
@@ -41,17 +38,14 @@ class CodeEditor(tk.Frame):
                                  spacing1=0, spacing2=0, spacing3=0)
         self.text_area.grid(row=0, column=1, sticky="nsew")
 
-        # 3. Vertical Scrollbar
         self.v_scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.sync_scroll)
         self.v_scrollbar.grid(row=0, column=2, sticky="ns")
         self.text_area.config(yscrollcommand=self.update_v_scroll)
 
-        # 4. Horizontal Scrollbar
         self.h_scrollbar = ttk.Scrollbar(self, orient="horizontal", command=self.text_area.xview)
         self.h_scrollbar.grid(row=1, column=1, sticky="ew")
         self.text_area.config(xscrollcommand=self.h_scrollbar.set)
 
-        # 5. Events
         self.text_area.bind("<KeyRelease>", self.on_content_changed)
         self.text_area.bind("<Tab>", self.handle_tab)
         self.text_area.bind("<Shift-Tab>", self.handle_backtab)
@@ -59,9 +53,6 @@ class CodeEditor(tk.Frame):
         self.text_area.bind("<Return>", self.on_return_key) 
         self.text_area.bind("<MouseWheel>", self.sync_wheel)
         self.line_numbers.bind("<MouseWheel>", self.sync_wheel)
-        
-        # FIX 1: Bind Configure directly to redraw, skipping the modification check
-        # Resizing affects line wrapping (visual), not text content (data).
         self.text_area.bind("<Configure>", self.redraw_line_numbers) 
 
         self.setup_font()
@@ -75,7 +66,6 @@ class CodeEditor(tk.Frame):
         else: self.font_family = "Courier New"
 
         self.shared_font = font.Font(family=self.font_family, size=self.font_size)
-
         self.text_area.configure(font=self.shared_font)
         self.line_numbers.configure(font=self.shared_font)
         
@@ -148,8 +138,6 @@ class CodeEditor(tk.Frame):
         first, _ = self.text_area.yview()
         self.line_numbers.yview_moveto(first)
 
-    # --- Key Handling ---
-
     def handle_tab(self, event):
         if self.use_spaces:
             self.text_area.insert("insert", " " * self.tab_size)
@@ -182,16 +170,13 @@ class CodeEditor(tk.Frame):
         self.on_content_changed()
         return "break"
 
-    # --- API ---
-    def get_text(self): return self.text_area.get("1.0", "end-1c")
+    def get_text(self):
+        return self.text_area.get("1.0", "end-1c")
     
     def set_text(self, text):
         self.text_area.delete("1.0", "end")
         self.text_area.insert("1.0", text)
         self.redraw_line_numbers()
-        
-        # FIX 2: Reset modification flag explicitly. 
-        # 'edit_reset' clears the undo stack, but 'edit_modified(False)' clears the dirty flag.
         self.text_area.edit_reset()
         self.text_area.edit_modified(False)
 
@@ -214,51 +199,38 @@ class PlanckEdit(tk.Tk):
         self.setup_dark_theme()
 
         self.current_file = None
-        self.is_dirty = False # Track modification state manually for visual logic
+        self.is_dirty = False
 
-        # Paths
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.config_path = os.path.join(script_dir, "config.json")
 
-        # Layout
         self.editor = CodeEditor(self, on_change=self.on_text_modified)
         self.editor.pack(fill="both", expand=True)
 
-        # Config
         self.config = self.load_config()
         self.apply_settings()
 
-        # Menu Setup
         self.context_menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#e6e6e6", 
                                     activebackground="#2a82da", activeforeground="white")
         self.create_menu_items()
 
-        # Global Bindings
         self.bind("<Control-n>", lambda e: self.new_file())
         self.bind("<Control-o>", lambda e: self.open_file())
         self.bind("<Control-s>", lambda e: self.save_file())
-        self.bind("<Control-S>", lambda e: self.save_file_as()) # Shift often sends capital S
+        self.bind("<Control-S>", lambda e: self.save_file_as())
         self.bind("<Control-w>", lambda e: self.close_app())
         self.bind("<Control-Alt-s>", lambda e: self.stash_file())
         self.bind("<Control-Alt-o>", lambda e: self.open_stash())
         self.bind("<Control-Alt-BackSpace>", lambda e: self.clear_stash())
-        
-        # Context Menu Binding (Ctrl + ` like in PySide version, or Right Click)
         self.bind("<Control-grave>", self.show_context_menu)
-        self.editor.text_area.bind("<Button-3>", self.show_context_menu) # Right click
-
-        # Window Close Event
+        self.editor.text_area.bind("<Button-3>", self.show_context_menu)
         self.protocol("WM_DELETE_WINDOW", self.close_app)
-
-        # Startup
         self.update_title()
         self.load_startup_stash()
 
     def setup_dark_theme(self):
-        # 1. Dark Title Bar (Windows 10/11 Hack)
-        # We ask the Windows DWM (Desktop Window Manager) to use the "Immersive Dark Mode" attribute.
         try:
-            self.update() # Force creation of the window handle (HWND)
+            self.update()
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20
             set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
             get_parent = ctypes.windll.user32.GetParent
@@ -267,17 +239,14 @@ class PlanckEdit(tk.Tk):
             value = ctypes.c_int(2)
             set_window_attribute(hwnd, rendering_policy, ctypes.byref(value), ctypes.sizeof(value))
         except Exception:
-            pass # Fail silently on non-Windows OS
+            pass
 
-        # 2. Dark Scrollbars (TTK Styling)
-        # We switch to the 'clam' theme engine which supports custom coloring.
         style = ttk.Style()
         style.theme_use('clam') 
 
-        # Define colors
         bg_color = "#2d2d2d"
         trough_color = "#1e1e1e"
-        active_color = "#3e3e3e" # Lighter grey when hovering
+        active_color = "#3e3e3e"
         arrow_color = "#969696"
 
         style.configure("Vertical.TScrollbar",
@@ -298,7 +267,6 @@ class PlanckEdit(tk.Tk):
             bordercolor=bg_color,
             arrowcolor=arrow_color)
 
-        # Map active states (when you hover or click)
         style.map("Vertical.TScrollbar",
             background=[('active', active_color), ('disabled', bg_color)],
             arrowcolor=[('active', 'white'), ('disabled', arrow_color)])
@@ -308,14 +276,11 @@ class PlanckEdit(tk.Tk):
             arrowcolor=[('active', 'white'), ('disabled', arrow_color)])
 
     def on_text_modified(self):
-        # Callback from editor when text changes
         if self.editor.is_modified():
             if not self.is_dirty:
                 self.is_dirty = True
                 self.update_title()
-            # Reset the internal modified flag so we catch the next event
             self.editor.set_modified(False)
-            # However, keep our logic flag True until saved
 
     def update_title(self):
         title = "planckedit"
@@ -358,8 +323,6 @@ class PlanckEdit(tk.Tk):
         finally:
             self.context_menu.grab_release()
 
-    # --- File I/O ---
-
     def new_file(self):
         if not self.maybe_save(): return
         self.editor.clear()
@@ -398,8 +361,6 @@ class PlanckEdit(tk.Tk):
 
     def save_file_as(self):
         was_stash_mode = (self.current_file is None)
-        
-        # FIX: Changed 'asksavefilename' to 'asksaveasfilename'
         path = filedialog.asksaveasfilename(title="Save File As", filetypes=[("All Files", "*.*")])
         
         if path:
@@ -414,7 +375,6 @@ class PlanckEdit(tk.Tk):
         if not self.is_dirty:
             return True
         
-        # Scratchpad Logic: If Untitled and Dirty -> Auto Stash
         if self.current_file is None:
             self.stash_file()
             return True
@@ -423,14 +383,12 @@ class PlanckEdit(tk.Tk):
         resp = messagebox.askyesnocancel("Unsaved Changes", 
                                          f"The document '{filename}' has been modified.\nDo you want to save your changes?")
         
-        if resp is True: # Yes
+        if resp is True:
             return self.save_file()
-        elif resp is False: # No (Discard)
+        elif resp is False:
             return True
-        else: # Cancel
+        else:
             return False
-
-    # --- Stash ---
 
     def stash_file(self):
         stash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stash.txt")
@@ -443,7 +401,6 @@ class PlanckEdit(tk.Tk):
             print(f"Error stashing: {e}")
 
     def open_stash(self):
-        # Only check safety if we are in a REAL file. 
         if self.current_file is not None:
             if not self.maybe_save(): return
 
@@ -489,8 +446,6 @@ class PlanckEdit(tk.Tk):
         self.is_dirty = False
         self.update_title()
 
-    # --- Config ---
-
     def load_config(self):
         default = {"word_wrap": True, "tab_size": 4, "use_spaces": True}
         if not os.path.exists(self.config_path): return default
@@ -508,10 +463,8 @@ class PlanckEdit(tk.Tk):
             print(f"Config save error: {e}")
 
     def apply_settings(self):
-        # Update Word Wrap and Scrollbar visibility
         self.editor.set_word_wrap(self.config["word_wrap"])
         
-        # Update Tabs
         self.editor.set_tab_settings(self.config["tab_size"], self.config["use_spaces"])
 
     def toggle_word_wrap(self):
